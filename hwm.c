@@ -1,10 +1,10 @@
-/* XterWM was written by Mike Hoye <mhoye@bespokeio.com> in mid-2012 out of pure spite.
+/* Hwm was written by Mike Hoye <mhoye@bespokeio.com> in mid-2012 out of pure spite.
  *
- * XterWM is intended to be opened as a secondary X session in addition to your WM of
- * choice. The sole design goals for XterWM were correctly-sized terminals
+ * Hwm is intended to be opened as a secondary X session in addition to your WM of
+ * choice. The sole design goals for Hwm were correctly-sized terminals
  * and not going completely insane 
  * 
- *
+ * It's derived from 
  * TinyWM written by Nick Welch <nick@incise.org> in 2005 & 2011.
  *
  * This software is in the public domain
@@ -18,8 +18,9 @@
 #include <syslog.h>
 
 #define XTERM_BINARY "/usr/bin/xterm"
-#define ASSUMPTION_ERROR -100 
-#define FORK_ERROR        -101
+#define ASSUMPTION_ERROR -100
+#define FUNDAMENTAL_ERROR -102
+#define FORK_ERROR        -103
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MAXSCREENS 16
@@ -31,7 +32,7 @@ int main(void)
     XWindowAttributes attr;
     XineramaScreenInfo * xinf;
     pid_t xterm_pids[MAXITEMS];  
-    int screens;
+    int screens, ret;;
     XButtonEvent start;
     XEvent ev;
 
@@ -44,12 +45,13 @@ int main(void)
     
     xinf = XineramaQueryScreens(dpy, * screens);
 
-    XGrabKey(dpy, XKeysymToKeycode(dpy, XStringToKeysym("F1")), Mod1Mask,
+    /* XGrabKey(dpy, XKeysymToKeycode(dpy, XStringToKeysym("F1")), Mod1Mask,
             DefaultRootWindow(dpy), True, GrabModeAsync, GrabModeAsync);
     XGrabButton(dpy, 1, Mod1Mask, DefaultRootWindow(dpy), True,
             ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
     XGrabButton(dpy, 3, Mod1Mask, DefaultRootWindow(dpy), True,
             ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+    */ 
 
     start.subwindow = None;
     for(;;)
@@ -85,8 +87,7 @@ int main(void)
 
         else if(ev.type == XRRScreenChangeNotifyEvent)
         {
-            if(0 != frobAllTheTerms(dpy, screens)) return 3;
-
+            if(! (ret = frobAllTheTerms(dpy, screens))) return(ret);
         }
 
     }
@@ -137,14 +138,14 @@ int frobAllTheTerms(Display * dpy, int * prevscr, pid_t * xterm_pids)
           exiting...") && return(ASSUMPTION_ERROR);
         } xterm_pids[curscr -1] = -1;
       }
-    else if ( current screens > prevscr ) {
+    else if ( curscr < prevscr ) {
         /* Figure out where the new screen is, then fork an xTerminal
         out to it. */ 
         pid = fork();
         if (-1 == pid ) { 
-            syslog(LOG_USER, "Could not fork. What's up with that? I'm out.");
-
-            return(ASSUMPTION_ERROR); }
+            syslog(LOG_USER, "Can't fork, what is this I don't even. Exiting.");
+            return(ASSUMPTION_ERROR); 
+        }
         else if (pid = 0) 
         { //child process.....
             xterm_opts = strcat ( "-geometry ", 
@@ -152,10 +153,19 @@ int frobAllTheTerms(Display * dpy, int * prevscr, pid_t * xterm_pids)
                                 itoa(xsi[curscr-1].height), "+",  
                                 itoa(xsi[curscr-1].x_org), "+", 
                                 itoa(xsi[curscr-1].y_org) );
+            syslog(LOG_USER, "Opening XTerm with options "  
             execv(XTERM_BINARY, xterm_opts);
-            return(0);
-            }
-
-
+            return(0); //child bails...
         }
+        else {
+          xterm_pids[curscr-1] = pid;
+          return(0);
+        }
+    }
+
+    /* We should never, ever get here. */
+
+   return(FUNDAMENTAL_ERROR); 
+}
+
 
