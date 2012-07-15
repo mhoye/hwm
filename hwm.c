@@ -29,6 +29,8 @@
 
 #define MAXSCREENS 16
 
+FILE * log;  /* Poor behaviour, I know. */
+
 
 int frobAllTheTerms(Display * dpy, int * prevscr, pid_t * xterm_pids)
 {
@@ -95,6 +97,9 @@ int frobAllTheTerms(Display * dpy, int * prevscr, pid_t * xterm_pids)
              sprintf(tmp, "%d", xsi[curscr-1].y_org);
              strcat(xterm_opts,tmp);
 
+             fprintf(log, "Trying ot open an Xterm with this command: %s %s\n", XTERM_BINARY, xterm_opts); 
+            
+
             execv(XTERM_BINARY, xterm_opts);
             return(0); //child bails...
         }
@@ -116,12 +121,10 @@ int main(void)
     Display * dpy;
     XineramaScreenInfo * xinf;
     pid_t xterm_pids[MAXSCREENS];  
-    int screens;
+    int screens=0;
     XWindowAttributes attr;
     XButtonEvent start;
     XEvent ev;
-
-    FILE * log;
 
     log = fopen(LOGFILE, "a+");
     
@@ -133,13 +136,14 @@ int main(void)
       
     xinf = XineramaQueryScreens(dpy, &screens);
 
-    XGrabKey(dpy, XKeysymToKeycode(dpy, XStringToKeysym("F2")), Mod1Mask,
+    XGrabKey(dpy, XKeysymToKeycode(dpy, XStringToKeysym("F4")), Mod1Mask,
             DefaultRootWindow(dpy), True, GrabModeAsync, GrabModeAsync);
     XGrabButton(dpy, 1, Mod1Mask, DefaultRootWindow(dpy), True,
             ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
     XGrabButton(dpy, 3, Mod1Mask, DefaultRootWindow(dpy), True,
             ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
 
+    frobAllTheTerms(dpy, &screens, xterm_pids);
     fprintf(log, "Entering event loop...\n");
 
     for(;;)

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Hwm 
+Comment=Hoye Window Manager
+Exec=hwm
+Terminal=False
+TryExec=hwm
+Type=Application
+
+[Window Manager]
+SessionManaged=true
