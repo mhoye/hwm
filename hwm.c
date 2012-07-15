@@ -12,86 +12,23 @@
 
 #include <X11/Xlib.h>
 #include <X11/extensions/Xinerama.h>
+#include <X11/extensions/Xrandr.h>
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <syslog.h>
+#include <string.h>
+#include <signal.h>
+#include <unistd.h>
+
+#define LOGFILE "/tmp/hwmlog"
 
 #define XTERM_BINARY "/usr/bin/xterm"
 #define ASSUMPTION_ERROR -100
 #define FUNDAMENTAL_ERROR -102
 #define FORK_ERROR        -103
 
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MAXSCREENS 16
 
-
-int main(void)
-{
-    Display * dpy;
-    XWindowAttributes attr;
-    XineramaScreenInfo * xinf;
-    pid_t xterm_pids[MAXITEMS];  
-    int screens, ret;;
-    XButtonEvent start;
-    XEvent ev;
-
-
-    /* If we can't open a display on which Xinerama is active, bail immediately. */
-
-    if(!(dpy = XOpenDisplay(0x0)) && XineramaIsActive(dpy) ) return 1;
-
-    /* Now, find out: How many actual physical monitors do we have here? */
-    
-    xinf = XineramaQueryScreens(dpy, * screens);
-
-    /* XGrabKey(dpy, XKeysymToKeycode(dpy, XStringToKeysym("F1")), Mod1Mask,
-            DefaultRootWindow(dpy), True, GrabModeAsync, GrabModeAsync);
-    XGrabButton(dpy, 1, Mod1Mask, DefaultRootWindow(dpy), True,
-            ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
-    XGrabButton(dpy, 3, Mod1Mask, DefaultRootWindow(dpy), True,
-            ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
-    */ 
-
-    start.subwindow = None;
-    for(;;)
-    {
-        XNextEvent(dpy, &ev);
-
-	/* here's where it goes - if you add a new monitor, manage it, if you remove it, kill whatever was shown in it.*/
-        
-        if(ev.type == XRRScreenEventNotify)
-          frobAllTheTerms(dpy,  xinf, screens, xterm_pids);
-
-        if(ev.type == KeyPress && ev.xkey.subwindow != None)
-            XRaiseWindow(dpy, ev.xkey.subwindow);
-        else if(ev.type == ButtonPress && ev.xbutton.subwindow != None)
-        {
-            XGetWindowAttributes(dpy, ev.xbutton.subwindow, &attr);
-            start = ev.xbutton;
-        }
-        else if(ev.type == MotionNotify && start.subwindow != None)
-        {
-            int xdiff = ev.xbutton.x_root - start.x_root;
-            int ydiff = ev.xbutton.y_root - start.y_root;
-            XMoveResizeWindow(dpy, start.subwindow,
-                attr.x + (start.button==1 ? xdiff : 0),
-                attr.y + (start.button==1 ? ydiff : 0),
-                MAX(1, attr.width + (start.button==3 ? xdiff : 0)),
-                MAX(1, attr.height + (start.button==3 ? ydiff : 0)));
-        }
-        else if(ev.type == ButtonRelease)
-        {
-            start.subwindow = None;
-        }
-
-        else if(ev.type == XRRScreenChangeNotifyEvent)
-        {
-            if(! (ret = frobAllTheTerms(dpy, screens))) return(ret);
-        }
-
-    }
-}
 
 int frobAllTheTerms(Display * dpy, int * prevscr, pid_t * xterm_pids)
 {
@@ -109,18 +46,16 @@ int frobAllTheTerms(Display * dpy, int * prevscr, pid_t * xterm_pids)
     * I suggest you use screen, or dtach, or somebody else's window manager. ger. 
     * 
     */
-    int curscr, c, r, pid;
-    char* xterm_opts[64]; /* This program will fail if we ever have sixteen-digit screen
+    int curscr, pid;
+    char xterm_opts[64]; /* This program will fail if we ever have sixteen-digit screen
                            resolutions, but if you're still using this program when pixel 
                            densities get to that point, um, hey bro wtf r u doin */
+    char tmp[12];
+   
+   
+    XineramaScreenInfo * xsi = XineramaQueryScreens(dpy, &curscr); 
 
-    XineramaScreenInfo * xsi = XineramaScreenInfo(dpy, * curscr); 
-
-    // pseudocode: if screen numbers are equal, od nothing, if more
-    current screens than pids, walk up and kill them, if smaller create //
-    your list of new ones.
-
-    if ( curscr == prevscr) {
+    if ( curscr == (int) &prevscr) {
       /* I'm assuming that "receiving an XRRScreenChangeNotifyEvent"
       is an atomic
        * event - that is, it could be a screen being added, moved or
@@ -129,36 +64,43 @@ int frobAllTheTerms(Display * dpy, int * prevscr, pid_t * xterm_pids)
        and you shouldn't use it.  * * We do nothing in this case, because
        we're going to resize all the screens * after all the options as
        a last step before leaving this function.  * */
-    } else if ( curscr > prevscr) {
+    } else if ( curscr > (int) &prevscr) {
         if ( xterm_pids[curscr -1 ] > 1 ) {
-          kill( xterm_pids[curscr - 1], 9) // Children shouldn't play
-          with guns
+          kill( xterm_pids[curscr - 1], 9); /* Children shouldn't 
+                                               play with guns. */
         } else {
-          syslog(LOG_USER, "Tried to kill the wrong process,
-          exiting...") && return(ASSUMPTION_ERROR);
+          return(ASSUMPTION_ERROR);
         } xterm_pids[curscr -1] = -1;
       }
-    else if ( curscr < prevscr ) {
+    else if ( curscr < (int) &prevscr ) {
         /* Figure out where the new screen is, then fork an xTerminal
         out to it. */ 
         pid = fork();
         if (-1 == pid ) { 
-            syslog(LOG_USER, "Can't fork, what is this I don't even. Exiting.");
             return(ASSUMPTION_ERROR); 
         }
-        else if (pid = 0) 
+        else if (pid == 0) 
         { //child process.....
-            xterm_opts = strcat ( "-geometry ", 
-                                itoa(xsi[curscr-1].width), "+", 
-                                itoa(xsi[curscr-1].height), "+",  
-                                itoa(xsi[curscr-1].x_org), "+", 
-                                itoa(xsi[curscr-1].y_org) );
-            syslog(LOG_USER, "Opening XTerm with options "  
+             xterm_opts[0] = NULL;
+             strcat( xterm_opts, " -geometry ");
+             sprintf(tmp, "%d", xsi[curscr-1].width);
+             strcat(xterm_opts, tmp);
+             strcat(xterm_opts, "+");
+             sprintf(tmp, "%d", xsi[curscr-1].height);
+             strcat(xterm_opts,tmp);
+             strcat(xterm_opts, "+");
+             sprintf(tmp, "%d", xsi[curscr-1].x_org);
+             strcat(xterm_opts,tmp);
+             strcat(xterm_opts, "+");
+             sprintf(tmp, "%d", xsi[curscr-1].y_org);
+             strcat(xterm_opts,tmp);
+
             execv(XTERM_BINARY, xterm_opts);
             return(0); //child bails...
         }
         else {
           xterm_pids[curscr-1] = pid;
+          *prevscr = curscr;
           return(0);
         }
     }
@@ -167,5 +109,61 @@ int frobAllTheTerms(Display * dpy, int * prevscr, pid_t * xterm_pids)
 
    return(FUNDAMENTAL_ERROR); 
 }
+
+
+int main(void)
+{
+    Display * dpy;
+    XineramaScreenInfo * xinf;
+    pid_t xterm_pids[MAXSCREENS];  
+    int screens;
+    XWindowAttributes attr;
+    XButtonEvent start;
+    XEvent ev;
+
+    FILE * log;
+
+    log = fopen(LOGFILE, "a+");
+    
+    fprintf(log, "Starting Hwm.\n");
+
+    if(!(dpy = XOpenDisplay(0x0))) return 1;
+
+    /* Now, find out: How many actual physical monitors do we have here? */
+      
+    xinf = XineramaQueryScreens(dpy, &screens);
+
+    XGrabKey(dpy, XKeysymToKeycode(dpy, XStringToKeysym("F2")), Mod1Mask,
+            DefaultRootWindow(dpy), True, GrabModeAsync, GrabModeAsync);
+    XGrabButton(dpy, 1, Mod1Mask, DefaultRootWindow(dpy), True,
+            ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+    XGrabButton(dpy, 3, Mod1Mask, DefaultRootWindow(dpy), True,
+            ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+
+    fprintf(log, "Entering event loop...\n");
+
+    for(;;)
+    {
+        XNextEvent(dpy, &ev);
+
+        if(ev.type == RRScreenChangeNotify) {
+          frobAllTheTerms(dpy, &screens, xterm_pids);
+        }
+        else if(ev.type == KeyPress && ev.xkey.subwindow != None){
+            XRaiseWindow(dpy, ev.xkey.subwindow);
+        }
+        else if(ev.type == ButtonPress && ev.xbutton.subwindow != None)
+        {
+            XGetWindowAttributes(dpy, ev.xbutton.subwindow, &attr);
+            start = ev.xbutton;
+        }
+        else if(ev.type == ButtonRelease)
+        {
+            start.subwindow = None;
+        }
+
+    }
+}
+
 
 
