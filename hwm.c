@@ -63,8 +63,8 @@ int frobAllTheTerms(Display * dpy, int * prevscr, pid_t * xterm_pids, char** env
        * that is, it could be a screen being added, moved or rotated, but it is 
        * never more than one of those things at once. If I'm wrong about that 
        * this program is horribly broken and you shouldn't use it.  We do 
-       * nothing in this case, because we're going to resize all the screens 
-       * after all the options as a last step before leaving this function.   
+       * nothing in this case now, but later we're going to refit all the screens 
+       * in this step on the assumption that one of them's been rotated. 
        */
        return (0);
 
